@@ -1,57 +1,120 @@
 use std::{
-    env,
+    collections::HashMap,
     io::Read,
     net::{TcpListener, TcpStream},
-    str::FromStr,
+    sync::mpsc,
+    thread,
 };
 
+use color_eyre::eyre::bail;
+use dotenv::dotenv;
 use serde::Deserialize;
-use tracing::Level;
+
+use crate::{config::Config, frigate::Frigate};
+
+mod config;
+mod frigate;
 
 #[derive(Debug, Deserialize)]
-struct CameraEvent<'a> {
+pub struct CameraEvent<'a> {
     #[serde(rename = "Type")]
-    event_type: &'a str,
+    pub kind: &'a str,
     #[serde(rename = "Status")]
-    status: i32,
+    pub status: i32,
     #[serde(rename = "Time")]
-    time: &'a str,
+    pub time: &'a str,
     #[serde(rename = "IP")]
-    ip: &'a str,
+    pub ip: &'a str,
     #[serde(rename = "DeviceName")]
-    device_name: &'a str,
+    pub device_name: &'a str,
+}
+
+struct AppState {
+    frigate: Frigate,
+    // device name -> current event ID
+    pending: HashMap<String, String>,
 }
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
 
-    let listen_addr = env::var("ALAAARM_LISTEN");
-    let listen_addr = listen_addr.as_deref().unwrap_or("0.0.0.0:6060");
-    let log_level = env::var("ALAAARM_LOG")
-        .ok()
-        .and_then(|x| Level::from_str(&x).ok())
-        .unwrap_or(Level::INFO);
+    if let Err(e) = dotenv()
+        && !e.not_found()
+    {
+        bail!(e)
+    }
+
+    let config = Config::load_from_env()?;
 
     tracing_subscriber::fmt::fmt()
-        .with_max_level(log_level)
+        .with_max_level(config.log_level)
         .init();
 
-    let listen = TcpListener::bind(listen_addr)?;
-    tracing::info!("Listening on {listen_addr}");
-    for conn in listen.incoming() {
-        if let Err(e) = handle_session(conn?) {
-            tracing::error!("error in connection handler: {e:?}");
+    let listen = TcpListener::bind(&config.listen_addr)?;
+
+    let frigate = Frigate::new(config.frigate_url);
+    frigate.login(&config.frigate_user, &config.frigate_password)?;
+
+    let state = AppState {
+        frigate,
+        pending: HashMap::new(),
+    };
+
+    let (task_tx, task_rx) = mpsc::sync_channel(10);
+    thread::spawn(move || handler_loop(task_rx, state));
+
+    tracing::info!("Listening on {}", config.listen_addr);
+    for stream in listen.incoming() {
+        match stream {
+            Ok(stream) => task_tx.send(stream)?,
+            Err(err) => tracing::error!("connection failed with error: {err:?}"),
         }
     }
     Ok(())
 }
 
-fn handle_session(mut stream: TcpStream) -> color_eyre::Result<()> {
-    let mut json = String::new();
+fn handler_loop(task_rx: mpsc::Receiver<TcpStream>, mut state: AppState) {
+    for stream in task_rx {
+        if let Err(e) = handle_session(stream, &mut state) {
+            tracing::error!("error in connection handler: {e:?}");
+        }
+    }
+}
+
+fn handle_session(mut stream: TcpStream, state: &mut AppState) -> color_eyre::Result<()> {
+    let mut json = String::with_capacity(200);
     stream.read_to_string(&mut json)?;
-    let json = json.strip_suffix("\0").unwrap_or(&json);
-    tracing::info!("Read JSON: {json:?}");
+    let Some(json) = json.strip_suffix("\0") else {
+        bail!("unexpected JSON: {json:?}")
+    };
+    tracing::debug!("read JSON: {json:?}");
     let event: CameraEvent = serde_json::from_str(json)?;
-    tracing::info!("Parsed as: {event:?}");
+    tracing::debug!("{event:?}");
+    match event.status {
+        0 => {
+            let Some(event_id) = state.pending.remove(event.device_name) else {
+                tracing::warn!(
+                    "device {} tried to end a nonexistent event",
+                    event.device_name
+                );
+                return Ok(());
+            };
+            state.frigate.end_event(&event_id)?;
+        }
+        1 => {
+            if state.pending.contains_key(event.device_name) {
+                tracing::warn!(
+                    "device {} tried to create a new event without ending previous",
+                    event.device_name
+                );
+                return Ok(());
+            }
+            let event_id = state.frigate.create_event(event.device_name, event.kind)?;
+            tracing::info!("event created: {}", event_id);
+            state.pending.insert(event.device_name.into(), event_id);
+        }
+        invalid => bail!("expected status 0 or 1, got {invalid}"),
+    }
+
     Ok(())
 }
