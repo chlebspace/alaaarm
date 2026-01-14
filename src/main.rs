@@ -85,7 +85,7 @@ fn handle_session(mut stream: TcpStream, state: &mut AppState) -> color_eyre::Re
     let mut json = String::with_capacity(200);
     stream.read_to_string(&mut json)?;
     let Some(json) = json.strip_suffix("\0") else {
-        bail!("unexpected JSON: {json:?}")
+        bail!("expected null-terminated JSON, got: {json:?}")
     };
     tracing::debug!("read JSON: {json:?}");
     let event: CameraEvent = serde_json::from_str(json)?;
