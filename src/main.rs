@@ -89,18 +89,9 @@ fn handle_session(mut stream: TcpStream, state: &mut AppState) -> color_eyre::Re
     };
     tracing::debug!("read JSON: {json:?}");
     let event: CameraEvent = serde_json::from_str(json)?;
-    tracing::debug!("{event:?}");
+    tracing::info!("{event:?}");
     match event.status {
-        0 => {
-            let Some(event_id) = state.pending.remove(event.device_name) else {
-                tracing::warn!(
-                    "device {} tried to end a nonexistent event",
-                    event.device_name
-                );
-                return Ok(());
-            };
-            state.frigate.end_event(&event_id)?;
-        }
+        // object is being tracked
         1 => {
             if state.pending.contains_key(event.device_name) {
                 tracing::warn!(
@@ -112,6 +103,18 @@ fn handle_session(mut stream: TcpStream, state: &mut AppState) -> color_eyre::Re
             let event_id = state.frigate.create_event(event.device_name, event.kind)?;
             tracing::info!("event created: {}", event_id);
             state.pending.insert(event.device_name.into(), event_id);
+        }
+        // object is not being tracked anymore
+        0 => {
+            let Some(event_id) = state.pending.remove(event.device_name) else {
+                tracing::warn!(
+                    "device {} tried to end a nonexistent event",
+                    event.device_name
+                );
+                return Ok(());
+            };
+            state.frigate.end_event(&event_id)?;
+            tracing::info!("event {event_id} ended");
         }
         invalid => bail!("expected status 0 or 1, got {invalid}"),
     }

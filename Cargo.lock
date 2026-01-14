@@ -23,6 +23,7 @@ version = "0.1.0"
 dependencies = [
  "color-eyre",
  "dotenv",
+ "percent-encoding",
  "serde",
  "serde_json",
  "tracing",

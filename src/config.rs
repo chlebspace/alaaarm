@@ -28,8 +28,8 @@ impl Config {
         let frigate_password = env("ALAAARM_FRIGATE_PASSWORD")?;
 
         Ok(Self {
-            listen_addr,
             log_level,
+            listen_addr,
             frigate_url,
             frigate_user,
             frigate_password,

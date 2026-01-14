@@ -1,4 +1,8 @@
+use std::borrow::Cow;
+
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
+use serde_json::Map;
 use ureq::{Agent, config::Config};
 
 pub struct Frigate {
@@ -7,6 +11,7 @@ pub struct Frigate {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)] // fields used by Debug
 struct CreateEventResponse {
     success: bool,
     event_id: String,
@@ -14,6 +19,7 @@ struct CreateEventResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(unused)] // fields used by Debug
 struct EndEventResponse {
     success: bool,
     message: String,
@@ -38,35 +44,43 @@ impl Frigate {
 
     pub fn login(&self, user: &str, password: &str) -> color_eyre::Result<()> {
         tracing::info!("logging in to Frigate");
-        let body = LoginRequest { user, password };
+
         self.http
-            .post(format!("{}/login", self.base_url))
-            .send_json(body)?;
+            .post(format!("{}login", self.base_url))
+            .send_json(LoginRequest { user, password })?;
+
         tracing::info!("login successful");
         Ok(())
     }
 
     pub fn create_event(&self, camera_name: &str, label: &str) -> color_eyre::Result<String> {
+        let camera_name: Cow<str> = utf8_percent_encode(camera_name, NON_ALPHANUMERIC).into();
+        let label: Cow<str> = utf8_percent_encode(label, NON_ALPHANUMERIC).into();
+
         let resp: CreateEventResponse = self
             .http
             .post(format!(
-                "{}/events/{camera_name}/{label}/create",
+                "{}events/{camera_name}/{label}/create",
                 self.base_url
             ))
             .send_empty()?
             .into_body()
             .read_json()?;
+
         tracing::debug!("{resp:?}");
         Ok(resp.event_id)
     }
 
     pub fn end_event(&self, event_id: &str) -> color_eyre::Result<()> {
+        let event_id: Cow<str> = utf8_percent_encode(event_id, NON_ALPHANUMERIC).into();
+
         let resp: EndEventResponse = self
             .http
-            .put(format!("{}/events/{event_id}/end", self.base_url))
-            .send_empty()?
+            .put(format!("{}events/{event_id}/end", self.base_url))
+            .send_json(Map::new())?
             .into_body()
             .read_json()?;
+
         tracing::debug!("{resp:?}");
         Ok(())
     }
