@@ -50,8 +50,12 @@ fn main() -> anyhow::Result<()> {
 
     let listen = TcpListener::bind(&config.listen_addr)?;
 
-    let frigate = Frigate::new(config.frigate_url);
-    frigate.login(&config.frigate_user, &config.frigate_password)?;
+    let frigate = Frigate::new(
+        config.frigate_url,
+        config.frigate_user,
+        config.frigate_password,
+    );
+    frigate.login()?;
 
     let state = AppState {
         frigate,
