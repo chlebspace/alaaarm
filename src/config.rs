@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use color_eyre::eyre::WrapErr;
+use anyhow::Context;
 use tracing::Level;
 
 pub struct Config {
@@ -11,12 +11,12 @@ pub struct Config {
     pub frigate_password: String,
 }
 
-fn env(key: &str) -> color_eyre::Result<String> {
-    std::env::var(key).wrap_err_with(|| format!("failed to read environment variable {key}"))
+fn env(key: &str) -> anyhow::Result<String> {
+    std::env::var(key).with_context(|| format!("failed to read environment variable {key}"))
 }
 
 impl Config {
-    pub fn load_from_env() -> color_eyre::Result<Config> {
+    pub fn load_from_env() -> anyhow::Result<Config> {
         let log_level = env("ALAAARM_LOG")
             .ok()
             .and_then(|x| Level::from_str(&x).ok())

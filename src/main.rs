@@ -6,7 +6,7 @@ use std::{
     thread,
 };
 
-use color_eyre::eyre::bail;
+use anyhow::bail;
 use dotenv::dotenv;
 use serde::Deserialize;
 
@@ -35,9 +35,7 @@ struct AppState {
     pending: HashMap<String, String>,
 }
 
-fn main() -> color_eyre::Result<()> {
-    color_eyre::install()?;
-
+fn main() -> anyhow::Result<()> {
     if let Err(e) = dotenv()
         && !e.not_found()
     {
@@ -81,7 +79,7 @@ fn handler_loop(task_rx: mpsc::Receiver<TcpStream>, mut state: AppState) {
     }
 }
 
-fn handle_session(mut stream: TcpStream, state: &mut AppState) -> color_eyre::Result<()> {
+fn handle_session(mut stream: TcpStream, state: &mut AppState) -> anyhow::Result<()> {
     let mut json = String::with_capacity(200);
     stream.read_to_string(&mut json)?;
     let Some(json) = json.strip_suffix("\0") else {

@@ -42,7 +42,7 @@ impl Frigate {
         }
     }
 
-    pub fn login(&self, user: &str, password: &str) -> color_eyre::Result<()> {
+    pub fn login(&self, user: &str, password: &str) -> anyhow::Result<()> {
         tracing::info!("logging in to Frigate");
 
         self.http
@@ -53,7 +53,7 @@ impl Frigate {
         Ok(())
     }
 
-    pub fn create_event(&self, camera_name: &str, label: &str) -> color_eyre::Result<String> {
+    pub fn create_event(&self, camera_name: &str, label: &str) -> anyhow::Result<String> {
         let camera_name: Cow<str> = utf8_percent_encode(camera_name, NON_ALPHANUMERIC).into();
         let label: Cow<str> = utf8_percent_encode(label, NON_ALPHANUMERIC).into();
 
@@ -71,7 +71,7 @@ impl Frigate {
         Ok(resp.event_id)
     }
 
-    pub fn end_event(&self, event_id: &str) -> color_eyre::Result<()> {
+    pub fn end_event(&self, event_id: &str) -> anyhow::Result<()> {
         let event_id: Cow<str> = utf8_percent_encode(event_id, NON_ALPHANUMERIC).into();
 
         let resp: EndEventResponse = self
